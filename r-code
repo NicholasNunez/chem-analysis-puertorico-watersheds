@@ -1,0 +1,77 @@
+#All watershed CHEM analysis
+
+#Combining data columns
+CHEMdata.new = CHEMdata %>%
+  select(DATETIME, Site, Calcium, Magnesium, Potassium, PO4, SiO2)
+
+#convert DATETIME to posixct
+CHEMdata.new$DATETIME = as.POSIXct(CHEMdata.new$DATETIME, format = "%m/%d/%Y %H:%M") 
+
+#Week of Year and Month of Year Column
+CHEMdata.new$WOY = strftime(CHEMdata.new$DATETIME, format = "%V")
+CHEMdata.new$WOY = as.numeric(CHEMdata.new$WOY)
+
+CHEMdata.new$MOY = strftime(CHEMdata.new$DATETIME, format = "%m")
+CHEMdata.new$MOY = as.numeric(CHEMdata.new$MOY)
+
+#Convert data form wide to long
+CHEMdata.long = gather(CHEMdata.new, variable, value, Calcium, Magnesium, Potassium, PO4, SiO2)%>%
+  select(DATETIME,WOY, Site, variable, value)
+
+
+#Grouping by Week and Solute
+CHEMdata.new.stat = CHEMdata.new.WOY %>%
+  group_by(WOY,variable,Site,DATETIME) %>%
+  summarise(avg=mean(value), STDEV=sd(value), cv = (STDEV/avg))
+
+CHEMdata.new.stat = na.omit(CHEMdata.new.stat)
+
+#Filter by Sites
+CHEMdatafilter.solute<-filter(CHEMdataorder, variable == "SiO2")
+
+CHEMdatafilter.site<-filter(CHEMdata.new, Site %in% c("MPR", "QP", "RES4", "RI"))
+
+CHEMdatafilter.cv<-filter(CHEMdatafilter.solute, cv>1)
+
+#Reorder variables
+CHEMdataorder=allwscv %>%arrange(cv) %>%
+  mutate(Sample_Name = factor(Sample_Name, levels=c("MPR", "Q1", "Q2", 
+                                                    "Q3", "RS", "QP", 
+                                                    "QPA", "QPB", "QS", "QT", "RI", "QG", "RES4")))
+
+#Bins for DischargeLs
+allwscv$Region <- ifelse(allwscv$Sample_Name=="MPR" & allwscv$Sample_Name=="Q1" & allwscv$Sample_Name="Q2" & allwscv$Sample_Name="Q3" & allwscv$Sample_Name="RS"{0}, 
+                         ifelse(allwscv$Sample_Name="QP" & allwscv$Sample_Name="QPA" & allwscv$Sample_Name="QPB" & allwscv$Sample_Name="QS" & allwscv$Sample_Name="RES4"& allwscv$Sample_Name="QT"{ 1}
+                                ifelse(allwscv$Sample_Name="RI" & allwscv$Sample_Name="QG" {2})))
+
+allwscv$Region<- ifelse(allwscv$Sample_Name== c("MPR","Q1","Q2","Q3","RS"), "NE", ifelse(allwscv$Sample_Name== c("QP","QPA","QPB","QS","QT","RES4"), "NW","S"))
+
+#plotting x= Date y = Solute
+p<-ggplot(data = na.omit(CHEMdatafilter.site), aes(x = DATETIME, y = SiO2, color=Site))+
+  geom_point()+
+  theme_bw() +
+  scale_x_datetime(date_breaks = "2 years", date_labels = "%m/%y") +
+  geom_vline(xintercept = as.POSIXct("2020-06-20"), linetype = 2, color = "red", size = 1) +
+  geom_vline(xintercept = as.POSIXct("2017-09-19"), linetype = 2, color = "red", size = 1) +
+  facet_grid(Site ~ .)+
+  labs(x="", y= "SiO2 mg/L" , title = "") 
+p
+
+p1<-p+scale_x_datetime(limits = as.POSIXct(c("2017-01-01","2021-12-1")))
+p2<-p1+scale_y_continuous(name="SiO2 mg/L", limits=c(0,75),(breaks=c(0,40,75)))
+p2+theme(legend.position = "none",axis.text.y = element_text(size=8),axis.text=element_text(size=10),axis.title=element_text(size=14,face="bold")) 
+
+
+p+scale_y_continuous(limits = c(0, 50))
+
+#Histogram cv by WOY
+h<-ggplot(CHEMdatafilter.cv, aes(x=WOY, y=cv, fill=Region)) +
+  geom_histogram(stat='identity', color = "black")+
+  scale_x_continuous(expand = c(0,0))+
+  facet_grid(Sample_Name ~ .)+
+  labs(x="Week of the Year", y= "" , title = "")
+h
+
+h1<-h+ scale_fill_manual(values = c("#F8766D", "#00BA38", "#C77CFF"))
+
+h+theme(legend.position = "none",axis.text.y = element_text(size=8),axis.text=element_text(size=12),axis.title=element_text(size=14,face="bold")) + scale_y_continuous(breaks=c(0,1,2),name=(bquote('CV of'~SiO2)), limits=c(0, 2.0))
